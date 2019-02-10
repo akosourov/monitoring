@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+service Monitoring {
+    rpc GetURLInfo (RequestURL) returns (ResponseInfo) {}
+    rpc GetMaxLatency (Empty) returns (ResponseLatency);
+    rpc GetMinLatency (Empty) returns (ResponseLatency);
+}
+
+message Empty {
+
+}
+
+message RequestURL {
+    string url = 1;
+}
+
+message ResponseInfo {
+    bool isAvailable = 1;
+    int64 avgLatency = 2;
+}
+
+message ResponseLatency {
+    string url = 1;
+    int64 avgLatency = 2;
+}
