@@ -8,6 +8,6 @@ type Storage interface {
 	Close() error
 }
 
-func New(path string, urls []string) Storage {
-	return NewBoltStorage(path, urls)
+func New(path string) Storage {
+	return NewBoltStorage(path)
 }

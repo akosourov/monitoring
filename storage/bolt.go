@@ -2,17 +2,15 @@
 Реализация хранилища с помощью boltdb.
 
 Схема данных:
-Два внешних бакета:
-	1. "Latency" - содержит вложенные бакеты, каждый вложенный бакет - это url сервиса,
-		в котором ключ - timestamp (нс), а значение - время отклика (нс). В случае, если
-		сервис недоступен пишется -1
+1. Для хранения времени откликов для каждого url сервиса, создаем отдельный бакет,
+в котором ключ - timestamp (нс), а значение - время отклика (нс). В случае, если
+сервис недоступен значение будет равно -1.
 
-	2. "AvgLatency" - среднее значения время отклика (нс) сервиса
-		ключ - url сервиса,
-		значение - json вида {Count: int, Sum: int64, Avg: int64},
-			где Count - общее число записей,
-				Sum - сумма времени отклика,
-				Avg - среднеарифметическое время отклика (нс)
+2. "AvgLatency" - бакет, для хранения среднего (p50) значения времени отклика (нс) сервиса,
+где	ключ - url сервиса, значение - json вида {Count: int, Sum: int64, Avg: int64},
+	где Count - общее число записей,
+		Sum - сумма времени отклика,
+		Avg - среднеарифметическое время отклика (нс)
 */
 
 package storage
@@ -26,36 +24,23 @@ import (
 	bolt "go.etcd.io/bbolt"
 )
 
-const (
-	latencyBucketName    = "Latency"
-	avgLatencyBucketName = "AvgLatency"
-)
+const avgLatencyBucketName = "AvgLatency"
 
-type boltStorage struct {
+// BoltStorage реализует интерфейс Storage
+type BoltStorage struct {
 	path string
 	db   *bolt.DB
 }
 
-func NewBoltStorage(path string, urls []string) *boltStorage {
-	db, err := bolt.Open(path, 0666, nil)
+// NewBoltStorage создает файл с базой данной и/или выполняет подключение к нему.
+func NewBoltStorage(path string) *BoltStorage {
+	db, err := bolt.Open(path, 0666, &bolt.Options{Timeout: 5 * time.Second})
 	if err != nil {
 		panic(err)
 	}
 
 	// prepare buckets
 	err = db.Update(func(tx *bolt.Tx) error {
-		b, err := tx.CreateBucketIfNotExists([]byte(latencyBucketName))
-		if err != nil {
-			return err
-		}
-		for _, url := range urls {
-			// subbuckets (url -> latency)
-			_, err := b.CreateBucketIfNotExists([]byte(url))
-			if err != nil {
-				return err
-			}
-		}
-
 		_, err = tx.CreateBucketIfNotExists([]byte(avgLatencyBucketName))
 		return err
 	})
@@ -63,13 +48,13 @@ func NewBoltStorage(path string, urls []string) *boltStorage {
 		panic(err)
 	}
 
-	return &boltStorage{
+	return &BoltStorage{
 		path: path,
 		db:   db,
 	}
 }
 
-func (b *boltStorage) Close() error {
+func (b *BoltStorage) Close() error {
 	return b.db.Close()
 }
 
@@ -79,7 +64,7 @@ type avgItem struct {
 	Avg   int64
 }
 
-func (b *boltStorage) PutLatency(url string, lat int64) error {
+func (b *BoltStorage) PutLatency(url string, lat int64) error {
 	return b.db.Update(func(tx *bolt.Tx) error {
 		bnow := make([]byte, 8)
 		binary.BigEndian.PutUint64(bnow, uint64(time.Now().UnixNano()))
@@ -87,9 +72,13 @@ func (b *boltStorage) PutLatency(url string, lat int64) error {
 		blat := make([]byte, 8)
 		binary.BigEndian.PutUint64(blat, uint64(lat))
 
-		latBkt := tx.Bucket([]byte(latencyBucketName)).Bucket([]byte(url))
-		err := latBkt.Put(bnow, blat)
+		// если первое обращение, создаем бакет для хранения времени отклика для url
+		latBkt, err := tx.CreateBucketIfNotExists([]byte(url))
 		if err != nil {
+			return err
+		}
+
+		if err := latBkt.Put(bnow, blat); err != nil {
 			return err
 		}
 
@@ -125,7 +114,7 @@ func (b *boltStorage) PutLatency(url string, lat int64) error {
 	})
 }
 
-func (b *boltStorage) GetMaxLatency() (string, int64, error) {
+func (b *BoltStorage) GetMaxLatency() (string, int64, error) {
 	var (
 		max int64
 		url string
@@ -149,7 +138,7 @@ func (b *boltStorage) GetMaxLatency() (string, int64, error) {
 	return url, max, err
 }
 
-func (b *boltStorage) GetMinLatency() (string, int64, error) {
+func (b *BoltStorage) GetMinLatency() (string, int64, error) {
 	var (
 		min int64 = -1
 		url string
@@ -173,12 +162,12 @@ func (b *boltStorage) GetMinLatency() (string, int64, error) {
 	return url, min, err
 }
 
-func (b *boltStorage) GetLastLatency(url string) (int64, error) {
+func (b *BoltStorage) GetLastLatency(url string) (int64, error) {
 	var last int64
 	err := b.db.View(func(tx *bolt.Tx) error {
-		bkt := tx.Bucket([]byte(latencyBucketName)).Bucket([]byte([]byte(url)))
+		bkt := tx.Bucket([]byte(url))
 		if bkt == nil {
-			return errors.New("Not exists")
+			return errors.New(url + " not exists")
 		}
 		c := bkt.Cursor()
 		bts, blat := c.Last()
@@ -189,4 +178,22 @@ func (b *boltStorage) GetLastLatency(url string) (int64, error) {
 		return nil
 	})
 	return last, err
+}
+
+func (b *BoltStorage) GetAvgLatency(url string) (int64, error) {
+	var avg int64
+	err := b.db.View(func(tx *bolt.Tx) error {
+		bkt := tx.Bucket([]byte(avgLatencyBucketName))
+		bitem := bkt.Get([]byte(url))
+		if bitem == nil {
+			return errors.New(url + "not exists")
+		}
+		var item avgItem
+		if err := json.Unmarshal(bitem, &item); err != nil {
+			return err
+		}
+		avg = item.Avg
+		return nil
+	})
+	return avg, err
 }

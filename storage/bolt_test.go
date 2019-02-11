@@ -9,9 +9,17 @@ import (
 
 const dbTestName = "test.db"
 
+func TestPutLatency(t *testing.T) {
+	bolt := NewBoltStorage(dbTestName)
+	defer cleanup(bolt, t)
+
+	err := bolt.PutLatency("http://ya.ru", 100)
+	assert.Nil(t, err)
+}
+
 func TestLastLatency(t *testing.T) {
 	urls := []string{"https://google.com", "https://notexist.eu"}
-	bolt := NewBoltStorage(dbTestName, urls)
+	bolt := NewBoltStorage(dbTestName)
 	defer cleanup(bolt, t)
 
 	// https://google.com
@@ -59,7 +67,7 @@ func TestLastLatency(t *testing.T) {
 
 func TestMinMaxLatency(t *testing.T) {
 	urls := []string{"https://google.com", "https://notexist.eu"}
-	bolt := NewBoltStorage(dbTestName, urls)
+	bolt := NewBoltStorage(dbTestName)
 	defer cleanup(bolt, t)
 
 	// для https://google.com среднее значение 600 / 3 = 200
@@ -94,7 +102,37 @@ func TestMinMaxLatency(t *testing.T) {
 	assert.Equal(t, int64(200), maxLat)
 }
 
-func cleanup(bolt *boltStorage, t *testing.T) {
+func TestGetAvgLatency(t *testing.T) {
+	bolt := NewBoltStorage(dbTestName)
+	defer cleanup(bolt, t)
+
+	avg, err := bolt.GetAvgLatency("http://ya.ru") // not exists
+	assert.Error(t, err)
+
+	err = bolt.PutLatency("http://ya.ru", 100)
+	assert.Nil(t, err)
+	err = bolt.PutLatency("http://ya.ru", 200)
+	assert.Nil(t, err)
+	err = bolt.PutLatency("http://ya.ru", 300)
+	assert.Nil(t, err)
+
+	err = bolt.PutLatency("http://ya.ru", -1)
+	assert.Nil(t, err)
+	err = bolt.PutLatency("http://ya2.ru", -1)
+	assert.Nil(t, err)
+	err = bolt.PutLatency("http://ya2.ru", 400)
+	assert.Nil(t, err)
+
+	avg, err = bolt.GetAvgLatency("http://ya.ru")
+	assert.Nil(t, err)
+	assert.Equal(t, int64(200), avg)
+
+	avg, err = bolt.GetAvgLatency("http://ya2.ru")
+	assert.Nil(t, err)
+	assert.Equal(t, int64(400), avg)
+}
+
+func cleanup(bolt *BoltStorage, t *testing.T) {
 	err := bolt.Close()
 	assert.Nil(t, err, "Cant close db")
 
