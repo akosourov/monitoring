@@ -177,6 +177,9 @@ func (b *boltStorage) GetLastLatency(url string) (int64, error) {
 	var last int64
 	err := b.db.View(func(tx *bolt.Tx) error {
 		bkt := tx.Bucket([]byte(latencyBucketName)).Bucket([]byte([]byte(url)))
+		if bkt == nil {
+			return errors.New("Not exists")
+		}
 		c := bkt.Cursor()
 		bts, blat := c.Last()
 		if bts == nil {

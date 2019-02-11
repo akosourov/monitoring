@@ -51,6 +51,10 @@ func TestLastLatency(t *testing.T) {
 	lat, err = bolt.GetLastLatency(urls[1])
 	assert.Nil(t, err, "GetLastLatency")
 	assert.Equal(t, int64(500), lat)
+
+	// not panic
+	lat, err = bolt.GetLastLatency("nil")
+	assert.Error(t, err)
 }
 
 func TestMinMaxLatency(t *testing.T) {
