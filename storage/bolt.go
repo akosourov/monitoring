@@ -34,7 +34,7 @@ type BoltStorage struct {
 
 // NewBoltStorage создает файл с базой данной и/или выполняет подключение к нему.
 func NewBoltStorage(path string) *BoltStorage {
-	db, err := bolt.Open(path, 0666, &bolt.Options{Timeout: 5 * time.Second})
+	db, err := bolt.Open(path, 0666, &bolt.Options{Timeout: 3 * time.Second})
 	if err != nil {
 		panic(err)
 	}
