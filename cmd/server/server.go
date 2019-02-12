@@ -2,14 +2,7 @@ package main
 
 import (
 	"context"
-	"flag"
 	"log"
-	"net"
-	"os"
-	"os/signal"
-	"syscall"
-
-	"google.golang.org/grpc"
 
 	pb "github.com/akosourov/monitoring/grpc"
 	"github.com/akosourov/monitoring/storage"
@@ -81,42 +74,4 @@ func newServer(dbpath string) *monitoringServer {
 	return &monitoringServer{
 		db: storage.NewBoltStorage(dbpath),
 	}
-}
-
-var (
-	address = flag.String("address", "localhost:8000", "host:port")
-	dbpath  = flag.String("dbpath", "./bolt.db", "path to db file")
-)
-
-func main() {
-	flag.Parse()
-
-	lis, err := net.Listen("tcp", *address)
-	if err != nil {
-		log.Fatalf("Failed to listen: %v", err)
-	}
-
-	grpcServer := grpc.NewServer()
-	monServer := newServer(*dbpath)
-	defer func() {
-		log.Println("[INFO] close db")
-		if err := monServer.db.Close(); err != nil {
-			log.Println("[WARN] failed to close db:", err)
-		}
-	}()
-	if err := monServer.putInitialData(); err != nil {
-		log.Fatalf("[WARN] Failed initial data: %v", err)
-	}
-	pb.RegisterMonitoringServer(grpcServer, monServer)
-
-	interrupt := make(chan os.Signal, 1)
-	signal.Notify(interrupt, syscall.SIGINT, syscall.SIGTERM)
-	go func() {
-		sig := <-interrupt
-		log.Println("[WARN] signal", sig)
-		grpcServer.GracefulStop()
-	}()
-
-	log.Println("[INFO] Start grpc server")
-	grpcServer.Serve(lis)
 }

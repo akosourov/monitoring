@@ -27,6 +27,8 @@ type Poller struct {
 // Start инициирует запуск поллера в работу. Он будет работать до тех пор,
 // пока не будет вызван метод Stop или не случится ошибка записи в БД.
 func (p *Poller) Start() {
+	log.Println("[INFO] Start polling with interval", p.Interval)
+
 	p.client = http.Client{
 		Timeout: p.Timeout,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
@@ -65,13 +67,16 @@ func (p *Poller) Start() {
 			// ждем обработки записи в бд оставшихся работ
 			close(out)
 			wgs.Wait()
+			p.stop <- struct{}{}
+			log.Println("[INFO] Poller was stoped")
 			return
 		}
 	}
 }
 
 func (p *Poller) Stop() {
-	p.stop <- struct{}{}
+	p.stop <- struct{}{} // сигнал завершения выполнения
+	<-p.stop             // ожидание факта окончания работы поллера
 }
 
 type call struct {
