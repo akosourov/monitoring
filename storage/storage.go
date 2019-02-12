@@ -5,6 +5,7 @@ type Storage interface {
 	GetMaxLatency() (string, int64, error)
 	GetMinLatency() (string, int64, error)
 	GetLastLatency(url string) (int64, error)
+	GetAvgLatency(url string) (int64, error)
 	Close() error
 }
 

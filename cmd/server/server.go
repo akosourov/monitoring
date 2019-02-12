@@ -19,11 +19,17 @@ func (s *monitoringServer) GetURLInfo(ctx context.Context, req *pb.RequestURL) (
 		return nil, err
 	}
 
+	avg, err := s.db.GetAvgLatency(req.Url)
+	if err != nil {
+		log.Println("[WARN] storage error", err)
+		return nil, err
+	}
+
 	resp := new(pb.ResponseInfo)
 	if lat >= 0 {
 		resp.IsAvailable = true
-		resp.AvgLatency = lat
 	}
+	resp.AvgLatency = avg
 
 	return resp, nil
 }
